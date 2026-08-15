@@ -1,6 +1,11 @@
-import { error } from "@/lib/server/http";
+import { error, json, withAuth } from "@/lib/server/http";
+import { getRunForUser } from "@/lib/server/store";
 
-// TODO(candidate): auth-guarded — return the current EncodeRun by id (404 if missing).
-export async function GET(_req: Request, _ctx: { params: Promise<{ id: string }> }) {
-  return error(501, "Not implemented: GET /api/runs/[id]");
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  return withAuth(req, (userId) => {
+    const run = getRunForUser(id, userId);
+    if (!run) return error(404, "Run not found");
+    return json(run);
+  });
 }
