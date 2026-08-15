@@ -1,14 +1,22 @@
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { User } from "@/lib/types";
 
 // Mock auth for the exercise — no real identity provider, no database.
 //
-// TODO(candidate): implement token issuance + verification.
-//  - issueTokens(): mint a SHORT-LIVED access token (~60s, so the client's refresh path is
-//    observable) and a longer-lived refresh token. A signed JWT or an opaque token you verify
-//    server-side both work.
-//  - verify the access token in getUserIdFromRequest(), and the refresh token in the refresh route.
-//  - Remember: native EventSource can't send an Authorization header — decide how the SSE route
-//    will authenticate (header via fetch-event-source? short-lived query token? cookie?).
+// Tokens are signed JWT-style blobs (header.payload.signature) using HMAC-SHA256 from node:crypto —
+// no external dependency. Access tokens live ~60s so the client's silent-refresh path is observable;
+// refresh tokens live 7 days.
+//
+// The SSE stream authenticates with an Authorization: Bearer header. Native EventSource can't send
+// headers, so the client uses @microsoft/fetch-event-source (see lib/client/use-run-stream.ts).
+
+// In production this comes from an env var / secrets manager. A dev fallback is fine here because
+// there is no real identity provider and no production data.
+const SECRET = process.env.ENCODR_TOKEN_SECRET ?? "encodr-dev-secret-do-not-use-in-prod";
+const ACCESS_TTL_SEC = 60;
+const REFRESH_TTL_SEC = 7 * 24 * 60 * 60;
+const ALGORITHM = "sha256";
+const JWT_ALG = "HS256";
 
 // The one hard-coded user. Documented in the README.
 const USERS: (User & { password: string })[] = [
@@ -29,24 +37,87 @@ export function findUser(id: string): User | null {
   return safe;
 }
 
-export function issueTokens(_userId: string): { accessToken: string; refreshToken: string } {
-  // TODO(candidate): mint real tokens.
-  throw new Error("Not implemented: issueTokens");
+// --- token helpers ---
+
+interface TokenPayload {
+  sub: string; // userId
+  typ: "access" | "refresh";
+  iat: number; // issued at (epoch seconds)
+  exp: number; // expiry (epoch seconds)
+  jti: string; // unique token id
 }
 
-export function issueAccessToken(_userId: string): string {
-  // TODO(candidate): mint a new short-lived access token from a valid refresh.
-  throw new Error("Not implemented: issueAccessToken");
+function b64url(input: Buffer | string): string {
+  return Buffer.from(input).toString("base64url");
 }
 
-/** Return the authenticated userId from the request, or null. */
-export function getUserIdFromRequest(_req: Request): string | null {
-  // TODO(candidate): read + verify the bearer (or query) token and return its subject.
-  return null;
+function sign(unsigned: string): string {
+  return createHmac(ALGORITHM, SECRET).update(unsigned).digest("base64url");
+}
+
+function mintToken(userId: string, typ: TokenPayload["typ"]): string {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = typ === "access" ? ACCESS_TTL_SEC : REFRESH_TTL_SEC;
+  const payload: TokenPayload = {
+    sub: userId,
+    typ,
+    iat: now,
+    exp: now + ttl,
+    jti: randomUUID(),
+  };
+  const header = b64url(JSON.stringify({ alg: JWT_ALG, typ: "JWT" }));
+  const body = b64url(JSON.stringify(payload));
+  const unsigned = `${header}.${body}`;
+  return `${unsigned}.${sign(unsigned)}`;
+}
+
+function verifyToken(token: string, expectedTyp: TokenPayload["typ"]): TokenPayload | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [headerB64, bodyB64, signature] = parts;
+  const unsigned = `${headerB64}.${bodyB64}`;
+
+  // Constant-time comparison to avoid leaking the signature.
+  const expected = sign(unsigned);
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  let payload: TokenPayload;
+  try {
+    payload = JSON.parse(Buffer.from(bodyB64, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+
+  if (payload.typ !== expectedTyp) return null;
+  if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+  if (!findUser(payload.sub)) return null; // user no longer exists
+  return payload;
+}
+
+export function issueTokens(userId: string): { accessToken: string; refreshToken: string } {
+  return {
+    accessToken: mintToken(userId, "access"),
+    refreshToken: mintToken(userId, "refresh"),
+  };
+}
+
+export function issueAccessToken(userId: string): string {
+  return mintToken(userId, "access");
+}
+
+/** Return the authenticated userId from the request, or null. Reads a Bearer token. */
+export function getUserIdFromRequest(req: Request): string | null {
+  const auth = req.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const token = auth.slice("Bearer ".length);
+  const payload = verifyToken(token, "access");
+  return payload?.sub ?? null;
 }
 
 /** Verify a refresh token and return its subject (userId), or null. */
-export function verifyRefreshToken(_token: string): string | null {
-  // TODO(candidate): verify signature + expiry + type.
-  return null;
+export function verifyRefreshToken(token: string): string | null {
+  const payload = verifyToken(token, "refresh");
+  return payload?.sub ?? null;
 }
