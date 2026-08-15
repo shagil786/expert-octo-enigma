@@ -43,6 +43,17 @@ describe("computeRun — happy path", () => {
     expect(t3.progressPct).toBeGreaterThanOrEqual(t2.progressPct);
   });
 
+  it("does not regress at stage boundaries", () => {
+    const record = makeRecord("https://cdn.example.com/videos/ok.mp4");
+    let previous = 0;
+
+    for (let elapsed = 0; elapsed <= 26_500; elapsed += 100) {
+      const progress = computeRun(record, START + elapsed).progressPct;
+      expect(progress).toBeGreaterThanOrEqual(previous);
+      previous = progress;
+    }
+  });
+
   it("COMPLETES after the full timeline with a result", () => {
     const run = computeRun(
       makeRecord("https://cdn.example.com/videos/ok.mp4"),

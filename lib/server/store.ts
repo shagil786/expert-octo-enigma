@@ -91,7 +91,7 @@ export function computeRun(record: RunRecord, now: number = Date.now()): EncodeR
     if (elapsed < segmentEnd) {
       const withinSegment = elapsed - acc;
       const pct = seg.progress
-        ? Math.round((withinSegment / seg.durationMs) * 100)
+        ? Math.round(((acc + withinSegment) / RUN_TOTAL_MS) * 100)
         : withinSegment === 0
           ? Math.max(0, Math.round((acc / RUN_TOTAL_MS) * 100))
           : Math.min(100, Math.round((segmentEnd / RUN_TOTAL_MS) * 100));
