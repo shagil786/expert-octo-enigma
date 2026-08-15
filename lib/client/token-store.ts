@@ -13,11 +13,22 @@ function isBrowser() {
   return typeof window !== "undefined";
 }
 
+/** localStorage can be missing or blocked (private browsing, tests, SSR edge cases). */
+function storage(): Storage | null {
+  if (!isBrowser()) return null;
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Hydrate the in-memory cache from localStorage (call once on the client at startup). */
 export function hydrateTokens() {
-  if (!isBrowser()) return;
-  accessToken = window.localStorage.getItem(ACCESS_KEY);
-  refreshToken = window.localStorage.getItem(REFRESH_KEY);
+  const store = storage();
+  if (!store) return;
+  accessToken = store.getItem(ACCESS_KEY);
+  refreshToken = store.getItem(REFRESH_KEY);
 }
 
 export function getAccessToken() {
@@ -30,20 +41,22 @@ export function getRefreshToken() {
 
 export function setTokens(tokens: { accessToken: string; refreshToken?: string }) {
   accessToken = tokens.accessToken;
-  if (isBrowser()) window.localStorage.setItem(ACCESS_KEY, tokens.accessToken);
+  const store = storage();
+  if (store) store.setItem(ACCESS_KEY, tokens.accessToken);
   if (tokens.refreshToken) {
     refreshToken = tokens.refreshToken;
-    if (isBrowser()) window.localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+    if (store) store.setItem(REFRESH_KEY, tokens.refreshToken);
   }
 }
 
 export function setStoredUser(user: unknown) {
-  if (isBrowser()) window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  storage()?.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function getStoredUser<T>(): T | null {
-  if (!isBrowser()) return null;
-  const raw = window.localStorage.getItem(USER_KEY);
+  const store = storage();
+  if (!store) return null;
+  const raw = store.getItem(USER_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as T;
@@ -55,9 +68,10 @@ export function getStoredUser<T>(): T | null {
 export function clearTokens() {
   accessToken = null;
   refreshToken = null;
-  if (isBrowser()) {
-    window.localStorage.removeItem(ACCESS_KEY);
-    window.localStorage.removeItem(REFRESH_KEY);
-    window.localStorage.removeItem(USER_KEY);
+  const store = storage();
+  if (store) {
+    store.removeItem(ACCESS_KEY);
+    store.removeItem(REFRESH_KEY);
+    store.removeItem(USER_KEY);
   }
 }

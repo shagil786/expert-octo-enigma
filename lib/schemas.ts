@@ -4,11 +4,33 @@ import { z } from "zod";
 // so the same rules apply in both places and field errors map cleanly back to the form.
 
 /**
- * TODO(candidate): tighten this into a real http(s) media-URL validator.
- * Right now it accepts ANY non-empty string. It should reject things like "not a url",
- * "ftp://...", a bare host with no path, etc. — and produce a helpful error message.
+ * Real http(s) media-URL validator.
+ *
+ * Rejects:
+ *  - empty / non-string values
+ *  - non-URL garbage ("not a url")
+ *  - non-http(s) schemes ("ftp://…", "file://…", "javascript:…")
+ *  - a bare host with no path ("https://example.com")
+ *  - URLs that have no path segment (root "/")
  */
-export const sourceUrlSchema = z.string().min(1, "Source URL is required");
+export const sourceUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "Source URL is required")
+  .refine(
+    (value) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(value);
+      } catch {
+        return false;
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+      // Require an actual path (more than just "/") so a bare host is rejected.
+      return parsed.pathname.length > 1;
+    },
+    "Enter a valid http(s) media URL",
+  );
 
 export const createJobSchema = z.object({
   sourceUrl: sourceUrlSchema,
