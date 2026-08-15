@@ -8,3 +8,4 @@ next-env.d.ts
 *.log
 .env*.local
 /coverage
+SOLUTION-NOTES.md
