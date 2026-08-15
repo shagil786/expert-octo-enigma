@@ -41,6 +41,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const encoder = new TextEncoder();
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
   let lastKey = "";
 
   const stream = new ReadableStream<Uint8Array>({
@@ -80,6 +81,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       };
 
       const cleanup = () => {
+        closed = true;
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
         try {
@@ -90,9 +92,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       };
 
       tick();
-      pollTimer = setInterval(tick, POLL_INTERVAL_MS);
+      if (!closed) pollTimer = setInterval(tick, POLL_INTERVAL_MS);
     },
     cancel() {
+      closed = true;
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = null;
     },

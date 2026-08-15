@@ -186,11 +186,6 @@ export function getRunRecord(id: string, userId = "u_demo"): RunRecord | null {
   return record && (record.userId ?? "u_demo") === userId ? record : null;
 }
 
-export function getRun(id: string, now: number = Date.now()): EncodeRun | null {
-  const record = runs.get(id);
-  return record ? computeRun(record, now) : null;
-}
-
 export function getRunForUser(id: string, userId: string, now: number = Date.now()): EncodeRun | null {
   const record = getRunRecord(id, userId);
   return record ? computeRun(record, now) : null;
