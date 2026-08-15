@@ -11,8 +11,14 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@/lib/types";
-import { AUTH_LOGOUT_EVENT } from "@/lib/client/api";
-import { clearTokens, getStoredUser, hydrateTokens } from "@/lib/client/token-store";
+import { api, AUTH_LOGOUT_EVENT } from "@/lib/client/api";
+import {
+  clearTokens,
+  getStoredUser,
+  hydrateTokens,
+  setStoredUser,
+  setTokens,
+} from "@/lib/client/token-store";
 
 interface AuthContextValue {
   user: User | null;
@@ -48,10 +54,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AUTH_LOGOUT_EVENT, handler);
   }, [logout]);
 
-  const login = useCallback(async (_email: string, _password: string) => {
-    // TODO(candidate): POST /api/auth/login, store the returned tokens + user
-    // (see lib/client/token-store.ts), and set the user in state.
-    throw new Error("Not implemented: login");
+  const login = useCallback(async (email: string, password: string) => {
+    const data = await api.post<{ accessToken: string; refreshToken: string; user: User }>(
+      "/api/auth/login",
+      { email, password },
+    );
+    setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+    setStoredUser(data.user);
+    setUser(data.user);
   }, []);
 
   const value = useMemo<AuthContextValue>(
